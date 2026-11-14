@@ -3,7 +3,8 @@ on:
   push: {branches: [main]}
   workflow_dispatch:
 permissions: {contents: read, pages: write, id-token: write}
-concurrency: {group: pages, cancel-in-progress: true}
+# Queue deploys instead of cancelling a running one (cancelling mid-deploy is what leaves Pages "stuck")
+concurrency: {group: pages, cancel-in-progress: false}
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -12,7 +13,38 @@ jobs:
       url: ${{ steps.d.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
-      - run: mkdir _site && cp index.html _site/
+      - name: Make sure Pages is on (and set to GitHub Actions)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PAT: ${{ secrets.ORGANIZE_TOKEN }}
+        run: |
+          repo="$GITHUB_REPOSITORY"; url="https://github.com/$repo/settings/pages"
+          if out=$(gh api "repos/$repo/pages" 2>&1); then
+            echo "$out" | grep -Eq '"build_type": ?"workflow"' && { echo "Pages OK"; exit 0; }
+            if [ -n "$PAT" ] && GH_TOKEN="$PAT" gh api -X PUT "repos/$repo/pages" -f build_type=workflow >/dev/null 2>&1; then
+              echo "Switched Pages source to GitHub Actions"; exit 0; fi
+            echo "::error title=Pages source is wrong::Open $url and set Source to GitHub Actions, then re-run."; exit 1
+          fi
+          if echo "$out" | grep -q "Not Found"; then
+            if [ -n "$PAT" ] && GH_TOKEN="$PAT" gh api -X POST "repos/$repo/pages" -f build_type=workflow >/dev/null 2>&1; then
+              echo "Pages enabled automatically"; exit 0; fi
+            echo "::error title=Pages is not enabled::Open $url, set Source to GitHub Actions (one-time), then re-run. Or add an ORGANIZE_TOKEN secret and this step will do it for you."; exit 1
+          fi
+          echo "::warning::Could not check Pages status, continuing: $out"
+      - name: Build site
+        run: |
+          [ -f index.html ] || { echo "::error::index.html is missing from the repo root"; exit 1; }
+          mkdir -p _site
+          for f in index.html engine.js worker.js; do [ -f "$f" ] && cp "$f" _site/; done
+          # engine.js is the single source of truth: inline it into the page so browser and CI brains match
+          if [ -f engine.js ]; then
+            awk -v f=engine.js 'BEGIN{while((getline l<f)>0)e=e l "\n"}
+              /<script id="eng">/{print "<script id=\"eng\">"; printf "%s",e; skip=1}
+              skip&&/<\/script>/{print "</script>"; skip=0; next}
+              !skip{print}' index.html > _site/index.html
+          fi
+          [ -d brain ] && cp -r brain _site/ || true
+          ls -R _site
       - uses: actions/upload-pages-artifact@v3
         with: {path: _site}
       - id: d

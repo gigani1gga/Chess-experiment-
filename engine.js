@@ -4,7 +4,8 @@ const SV=[0,100,320,330,500,900,0],CM=new Uint8Array(128).fill(15),PASS='ai-ches
 CM[0]=13;CM[7]=14;CM[4]=12;CM[112]=7;CM[119]=11;CM[116]=3;
 const IX=(s,f)=>s>0?((f>>4)<<3)|(f&7):((7-(f>>4))<<3)|(f&7);
 const ev=(S,x,q,s)=>S.V[x-1]+S.P[(x-1)*64+IX(s,q)];
-const fresh=()=>({g:0,w:0,d:0,l:0,V:[100,320,330,500,900,0],P:new Array(384).fill(0),op:{},mv:{},sac:{},miss:{},tag:{}});
+const VER=2,fresh=()=>({ver:VER,hist:[],g:0,w:0,d:0,l:0,V:[100,320,330,500,900,0],P:new Array(384).fill(0),op:{},mv:{},sac:{},miss:{},tag:{}});
+const migrate=K=>{const f=fresh();for(const k in f)if(K[k]===undefined)K[k]=f[k];K.ver=VER;return K};
 function start(){const b=new Int8Array(128),B=[4,2,3,5,6,3,2,4];for(let i=0;i<8;i++){b[i]=B[i];b[16+i]=1;b[96+i]=-1;b[112+i]=-B[i]}return{b,s:1,c:15,ep:-1,h:0,k:[4,116]}}
 function att(b,s,c){
  for(const d of D.N){const t=s+d;if(!(t&136)&&b[t]===2*c)return 1}
@@ -48,8 +49,8 @@ function pick(S,p,key,o){
  if(att(q.b,q.k[1-i],s))tg.push('check');if(pr)tg.push('promotion');if(fl===2)tg.push('castle');if(fl===1)tg.push('en passant');
  return{m,q,id:id(ch),tg,g:SV[c]+(pr?800:0),ms:mj>=0&&ch!==mj?id(mj):null}}
 const up=(o,k,v)=>{const a=o[k]||(o[k]=v.map(()=>0));v.forEach((x,i)=>a[i]+=+x)};
-function game(S,D,o){let p=start(),key='',B=[],R=[],smp=[],mats=[0],mat=0,ply=0,res=0;
- for(;;){const r=pick(S,p,ply<10?key:null,o);
+function game(S,D,o){const O=o.opp,sd=Math.random()<.5?1:-1;let p=start(),key='',B=[],R=[],smp=[],mats=[0],mat=0,ply=0,res=0;
+ for(;;){const r=pick(O&&p.s!==sd?O:S,p,ply<10?key:null,o);
   if(!r){res=att(p.b,p.k[p.s>0?0:1],-p.s)?-p.s:0;break}
   R.push({s:p.s,id:r.id,tg:r.tg,ms:r.ms});
   if(ply<10){key+=(r.m&16383)+',';B.push(key)}
@@ -61,8 +62,8 @@ function game(S,D,o){let p=start(),key='',B=[],R=[],smp=[],mats=[0],mat=0,ply=0,
   up(D.mv,r.id,a);for(const t of r.tg)up(D.tag,t,a);
   if(d<=-200)up(D.sac,r.id,[1,z>0,(mats[Math.min(i+4,n)]-mats[i])*s>=-100]);
   if(r.ms!=null)up(D.miss,r.ms,[1])});
- for(const b of smp){let e=0;for(let f=0;f<128;f++){if(f&136){f+=7;continue}const x=b[f];if(x)e+=Math.sign(x)*ev(S,Math.abs(x),f,Math.sign(x))}
-  const pr=Math.tanh(e/500),g=.5*(res-pr)*(1-pr*pr);
+ const lr=Math.max(.15,3000/(3000+S.g));for(const b of smp){let e=0;for(let f=0;f<128;f++){if(f&136){f+=7;continue}const x=b[f];if(x)e+=Math.sign(x)*ev(S,Math.abs(x),f,Math.sign(x))}
+  const pr=Math.tanh(e/500),g=lr*.5*(res-pr)*(1-pr*pr);
   for(let f=0;f<128;f++){if(f&136){f+=7;continue}const x=b[f];if(!x)continue;const a=Math.abs(x),sg=Math.sign(x),j=(a-1)*64+IX(sg,f);
    S.P[j]=Math.max(-200,Math.min(200,S.P[j]+g*sg));if(a<6)S.V[a-1]=Math.max(30,Math.min(2000,S.V[a-1]+g*sg*.3))}}}
 function batch(S,ms,o){const D={g:0,w:0,d:0,l:0,op:{},mv:{},sac:{},miss:{},tag:{}},V0=S.V.slice(),P0=S.P.slice(),t=Date.now();let n=0;
@@ -71,11 +72,16 @@ function batch(S,ms,o){const D={g:0,w:0,d:0,l:0,op:{},mv:{},sac:{},miss:{},tag:{
 function merge(K,R,N){const D=R.D;for(const k of['g','w','d','l'])K[k]+=D[k];
  for(const s of['op','mv','sac','miss','tag']){const a=K[s];for(const k in D[s]){const v=D[s][k],x=a[k];if(x)v.forEach((y,i)=>x[i]+=y);else a[k]=v}}
  R.dV.forEach((d,i)=>K.V[i]+=d/N);R.dP.forEach((d,i)=>K.P[i]+=d/N);
- if(Object.keys(K.op).length>40000)for(const k in K.op){const e=K.op[k];if(e[0]+e[1]+e[2]<3)delete K.op[k]}}
+ for(let m=3;Object.keys(K.op).length>40000&&m<500;m*=2)for(const k in K.op){const e=K.op[k];if(e[0]+e[1]+e[2]<m)delete K.op[k]}}
+// A vs B, n games, colours alternate, no learning. Returns A's score 0..1
+function duel(A,B,n,o){let sc=0;for(let i=0;i<n;i++){const a=i&1?-1:1;let p=start(),r=0,mat=0;
+ for(let ply=0;;ply++){const x=pick(p.s===a?A:B,p,null,o);if(!x){r=att(p.b,p.k[p.s>0?0:1],-p.s)?-p.s:0;break}
+  mat+=p.s*x.g;p=x.q;if(p.h>=100||ply>=o.max){r=Math.abs(mat)>=300?Math.sign(mat):0;break}}
+ sc+=r===0?.5:r===a?1:0}return sc/n}
 async function ky(pw,salt){const m=await C.subtle.importKey('raw',new TextEncoder().encode(pw),'PBKDF2',false,['deriveKey']);return C.subtle.deriveKey({name:'PBKDF2',salt,iterations:100000,hash:'SHA-256'},m,{name:'AES-GCM',length:256},false,['encrypt','decrypt'])}
 const rd=async s=>new Uint8Array(await new Response(s).arrayBuffer());
 async function pack(K,pw){const z=await rd(new Blob([JSON.stringify(K)]).stream().pipeThrough(new CompressionStream('deflate-raw'))),salt=C.getRandomValues(new Uint8Array(16)),iv=C.getRandomValues(new Uint8Array(12)),c=new Uint8Array(await C.subtle.encrypt({name:'AES-GCM',iv},await ky(pw,salt),z)),o=new Uint8Array(28+c.length);o.set(salt);o.set(iv,16);o.set(c,28);return o}
-async function unpack(u,pw){const z=new Uint8Array(await C.subtle.decrypt({name:'AES-GCM',iv:u.slice(16,28)},await ky(pw,u.slice(0,16)),u.slice(28)));return JSON.parse(await new Response(new Blob([z]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).text())}
-const CH={fresh,batch,merge,pack,unpack,PASS,start,legal,perft};
+async function unpack(u,pw){const z=new Uint8Array(await C.subtle.decrypt({name:'AES-GCM',iv:u.slice(16,28)},await ky(pw,u.slice(0,16)),u.slice(28)));return migrate(JSON.parse(await new Response(new Blob([z]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).text()))}
+const CH={fresh,batch,merge,pack,unpack,PASS,start,legal,perft,pick,duel,migrate,VER};
 if(typeof module!=='undefined')module.exports=CH;else globalThis.CH=CH;
 })();
