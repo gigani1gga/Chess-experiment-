@@ -1,0 +1,49 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Chess AI Lab</title>
+<style>:root{--bg:#fff;--fg:#1a1a1a;--card:#f1f1f1;--ac:#1f8a5b;color-scheme:light dark}
+@media(prefers-color-scheme:dark){:root{--bg:#111;--fg:#eee;--card:#1e1e1e;--ac:#3fb985}}
+body{margin:0;padding:12px;background:var(--bg);color:var(--fg);font:15px system-ui,sans-serif}
+button,select,input{font:inherit;padding:8px 12px;border-radius:8px;border:1px solid #888;background:var(--card);color:var(--fg)}
+.row{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0}#go{background:var(--ac);color:#fff;border:0}
+section{background:var(--card);border-radius:10px;padding:10px;margin:8px 0}h3{margin:0 0 6px;font-size:14px}
+section div{display:flex;justify-content:space-between;gap:8px;font-size:13px;padding:1px 0}section span{overflow-wrap:anywhere}
+#st{font-size:20px;font-weight:600}</style></head><body>
+<h1 style="font-size:20px;margin:0 0 6px">Chess AI Lab</h1><div id="st">Loading brain…</div><div id="sub"></div>
+<div class="row"><button id="go">Start</button><select id="md"><option value="1">Smart</option><option value="0">Turbo</option></select><input id="nw" type="number" min="1" max="32" style="width:64px"></div>
+<div class="row"><button id="dl">Download brain</button><button id="ul">Import</button><button id="rs">Reset</button><input id="fi" type="file" hidden></div>
+<div id="ins"></div>
+<script src="engine.js"></script><script>
+const $=i=>document.getElementById(i);let K,ws=[],on=0,N=1,t0=0,g0=0;
+$('nw').value=Math.min(navigator.hardwareConcurrency||4,16);
+const opts=()=>$('md').value==1?{nz:25,eps:.05,sm:1,max:160,bk:100}:{nz:60,eps:.05,sm:0,max:120,bk:100};
+const b64=u=>new Promise(r=>{const f=new FileReader();f.onload=()=>r(f.result.split(',')[1]);f.readAsDataURL(new Blob([u]))});
+async function save(){try{localStorage.brain=await b64(await CH.pack(K,CH.PASS))}catch(e){}}
+async function load(){let a=null,b=null;
+ try{if(localStorage.brain)a=await CH.unpack(Uint8Array.from(atob(localStorage.brain),c=>c.charCodeAt(0)),CH.PASS)}catch(e){}
+ try{const r=await fetch('brain/brain.aienc');if(r.ok)b=await CH.unpack(new Uint8Array(await r.arrayBuffer()),CH.PASS)}catch(e){}
+ K=a&&(!b||a.g>=b.g)?a:b||CH.fresh()}
+const nm=id=>{const q=id%64,r=id/64|0;return'PNBRQK'[(r/7|0)-1]+(r%7?'x'+'.PNBRQK'[r%7]:'')+'→'+'abcdefgh'[q%8]+(1+(q>>3))};
+const mvs=k=>k.split(',').filter(Boolean).map(v=>{v=+v;const s=x=>'abcdefgh'[x&7]+((x>>4)+1);return s(v&127)+s(v>>7)}).join(' ');
+const pc=x=>Math.round(x*100)+'%',pw=x=>(x/100).toFixed(2);
+const top=(o,min,f,asc,k=3)=>Object.entries(o).filter(([,a])=>a[0]>=min).map(([id,a])=>[id,f(a),a[0]]).sort((x,y)=>asc?x[1]-y[1]:y[1]-x[1]).slice(0,k);
+const sec=(t,r)=>`<section><h3>${t}</h3>${r.length?r.map(x=>`<div><span>${x[0]}</span><b>${x[1]}</b></div>`).join(''):'<i>still learning…</i>'}</section>`;
+function draw(){const rate=on?Math.round((K.g-g0)/((Date.now()-t0)/1000)):0;
+ $('st').textContent=K.g.toLocaleString()+' games'+(on?' · '+rate+'/s':'');$('sub').textContent=`White ${K.w} · Draw ${K.d} · Black ${K.l}`;
+ const O=Object.entries(K.op).map(([k,a])=>{const n=a[0]+a[1]+a[2];return[k,(a[0]+a[1]/2)/n,n]}).filter(x=>x[2]>=8&&x[0].split(',').length>4);
+ const wr=a=>(a[1]-a[2])/a[0],mat=a=>a[3]/a[0],M=(l,f)=>l.map(x=>[nm(x[0]),f(x)]);
+ $('ins').innerHTML=sec('Learned piece values (start 100/320/330/500/900)',['Pawn','Knight','Bishop','Rook','Queen'].map((n,i)=>[n,Math.round(K.V[i])]))
+ +sec('Best openings for White',[...O].sort((a,b)=>b[1]-a[1]).slice(0,3).map(x=>[mvs(x[0]),pc(x[1])+' · '+x[2]]))
+ +sec('Best openings for Black',[...O].sort((a,b)=>a[1]-b[1]).slice(0,3).map(x=>[mvs(x[0]),pc(1-x[1])+' · '+x[2]]))
+ +sec('Moves that win most',M(top(K.mv,20,wr),x=>pc(x[1])))+sec('Moves that lose most',M(top(K.mv,20,wr,1),x=>pc(x[1])))
+ +sec('Moves that win material',M(top(K.mv,20,mat),x=>'+'+pw(x[1])))+sec('Moves that lose material',M(top(K.mv,20,mat,1),x=>pw(x[1])))
+ +sec('Sacrifices that worked',M(top(K.sac,5,a=>a[1]/a[0]),x=>pc(x[1])+' win · '+x[2]))+sec('Sacrifices that flopped',M(top(K.sac,5,a=>a[1]/a[0],1),x=>pc(x[1])+' win · '+x[2]))
+ +sec('Tactics (win rate · avg material)',top(K.tag,10,wr,0,8).map(x=>[x[0],pc(wr(K.tag[x[0]])/2+.5)+' · '+pw(mat(K.tag[x[0]]))]))
+ +sec('Missed mate-in-1 (move it should have played)',Object.entries(K.miss).sort((a,b)=>b[1][0]-a[1][0]).slice(0,3).map(([id,a])=>[nm(+id),'×'+a[0]]))}
+$('go').onclick=()=>{on=!on;$('go').textContent=on?'Stop':'Start';
+ if(on){N=+$('nw').value||1;t0=Date.now();g0=K.g;ws=[...Array(N)].map(()=>{const w=new Worker('worker.js');const go=()=>w.postMessage({K,ms:1500,o:opts()});w.onmessage=e=>{CH.merge(K,e.data,N);on&&go()};go();return w})}
+ else{ws.forEach(w=>w.terminate());ws=[];save()}};
+$('dl').onclick=async()=>{const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([await CH.pack(K,CH.PASS)]));a.download='brain.aienc';a.click()};
+$('ul').onclick=()=>$('fi').click();
+$('fi').onchange=async e=>{try{K=await CH.unpack(new Uint8Array(await e.target.files[0].arrayBuffer()),CH.PASS);draw()}catch(x){alert('Not a valid brain file')}};
+$('rs').onclick=()=>{if(confirm('Erase the learned brain?')){K=CH.fresh();localStorage.removeItem('brain');draw()}};
+load().then(()=>{draw();setInterval(draw,2000);setInterval(()=>on&&save(),20000)});
+</script></body></html>
