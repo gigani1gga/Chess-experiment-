@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Chess AI Lab</title>
+<style>
+:root{--bg:#eef1f2;--fg:#14232b;--pn:#fff;--ln:#c5d0d5;--l:#dfe7ea;--d:#6f93a6;--ac:#2f6f8f;--ac2:#fff;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#12191d;--fg:#e6eef1;--pn:#1b262c;--ln:#2d3d45;--l:#b9c6cc;--d:#4f6f80;--ac:#7fb6d1;--ac2:#10181c}}
+:root[data-theme="dark"]{--bg:#12191d;--fg:#e6eef1;--pn:#1b262c;--ln:#2d3d45;--l:#b9c6cc;--d:#4f6f80;--ac:#7fb6d1;--ac2:#10181c}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{--s:min(calc(100vw - 24px),480px);width:var(--s);margin:0 auto;padding:14px 0 28px}
+h1{font:600 22px/1.2 "Iowan Old Style",Georgia,serif;margin:0 0 10px;min-height:27px}
+#bd{display:grid;grid-template-columns:repeat(8,1fr);width:var(--s);height:var(--s);border-radius:6px;overflow:hidden;border:1px solid var(--ln)}
+.sq{position:relative;display:flex;align-items:center;justify-content:center;cursor:pointer;user-select:none;-webkit-user-select:none;-webkit-tap-highlight-color:transparent}
+.l{background-color:var(--l)}.d{background-color:var(--d)}
+.sq b{font-weight:400;font-size:calc(var(--s)/8*.82);line-height:1;font-family:"Segoe UI Symbol","Noto Sans Symbols 2","Apple Symbols","DejaVu Sans",serif}
+.w{color:#fff;-webkit-text-stroke:1.3px #15202a}
+.k{color:#161c20;text-shadow:0 0 2px rgba(255,255,255,.5)}
+.sq i,.sq u{position:absolute;font:600 10px/1 system-ui,sans-serif;text-decoration:none;font-style:normal;opacity:.7;pointer-events:none}
+.sq i{top:3px;left:3px}.sq u{bottom:3px;right:3px}
+.l i,.l u{color:#44606e}.d i,.d u{color:#e3edf1}
+.lm{background-image:linear-gradient(rgba(242,193,78,.5),rgba(242,193,78,.5))}
+.sel{background-image:linear-gradient(rgba(242,193,78,.85),rgba(242,193,78,.85))}
+.ck{background-image:radial-gradient(circle,rgba(225,50,50,.9),rgba(225,50,50,0) 72%)}
+.dot::after{content:"";position:absolute;width:28%;height:28%;border-radius:50%;background:rgba(20,35,43,.38)}
+.cap::after{content:"";position:absolute;inset:4%;border-radius:50%;border:4px solid rgba(20,35,43,.38)}
+.row{display:flex;gap:8px;margin-top:10px}
+input,select,button{font:inherit;font-size:16px;color:var(--fg);background:var(--pn);border:1px solid var(--ln);border-radius:8px;padding:10px 12px;min-width:0}
+input{flex:1}
+button{cursor:pointer}
+button.p{background:var(--ac);color:var(--ac2);border-color:var(--ac);font-weight:600}
+select{flex:1}
+#er{min-height:22px;margin:6px 0 0;font-size:14px;color:#c0392b}
+#pr{display:flex;gap:8px;margin-top:10px;align-items:center}
+#pr button{font-size:30px;padding:2px 12px;line-height:1.3}
+#pr[hidden]{display:none}
+#ml{margin-top:12px;padding:12px;background:var(--pn);border:1px solid var(--ln);border-radius:8px;font-size:15px;max-height:140px;overflow:auto;min-height:48px}
+:focus-visible{outline:2px solid var(--ac);outline-offset:2px}
+textarea{width:100%;margin-top:8px;height:150px;font:14px/1.4 ui-monospace,Menlo,Consolas,monospace;color:var(--fg);background:var(--pn);border:1px solid var(--ln);border-radius:8px;padding:10px}
+[hidden]{display:none!important}
+#lins section{background:var(--pn);border:1px solid var(--ln);border-radius:10px;padding:10px;margin:8px 0}#lins h3{margin:0 0 6px;font-size:14px}
+#lins section div{display:flex;justify-content:space-between;gap:8px;font-size:13px;padding:1px 0}#lins span{overflow-wrap:anywhere}#lsub{font-size:14px;opacity:.8}
+</style></head>
+<body><main>
+<div class="row" style="margin:0 0 10px"><button id="tb" class="p" style="flex:1">Board</button><button id="tl" style="flex:1">AI Lab</button></div>
+<div id="pb">
+<h1 id="st"></h1>
+<div id="bd"></div>
+<div id="pr" hidden></div>
+<div class="row"><input id="in" placeholder="Type a move: e4, Nf3, O-O, e8=Q" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="go"><button id="go" class="p">Move</button></div>
+<p id="er"></p>
+<div class="row">
+<select id="md"><option value="2">Two players</option><option value="w">You: White vs computer</option><option value="b">You: Black vs computer</option><option value="c">Computer vs computer</option><option value="f">Free play: illegal moves allowed</option></select>
+</div>
+<div class="row"><label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="lb" style="flex:none;width:auto"> Computer plays with the learned brain</label></div>
+<div class="row"><button id="nw">New game</button><button id="un">Undo</button><button id="fl">Flip</button></div>
+<div class="row"><button id="ai" class="p" style="flex:1">Copy position for AI</button></div>
+<textarea id="pt" readonly hidden></textarea>
+<div id="ml"></div>
+</div>
+<div id="pl" hidden><div id="lst" style="font:600 20px/1.2 system-ui">Loading brain…</div><div id="lsub"></div>
+<div class="row"><button id="lgo" class="p">Start</button><select id="lmd" style="flex:none"><option value="1">Smart</option><option value="0">Turbo</option></select><input id="lnw" type="number" min="1" max="32" style="flex:none;width:64px"></div>
+<div class="row"><button id="dl">Export</button><button id="ul">Import</button><button id="rs">Reset</button></div>
+<textarea id="box" style="height:70px" placeholder="Export puts your brain code here. Paste a code and tap Import."></textarea>
+<div id="lins"></div></div>
+</main>
+<script>
+const $=id=>document.getElementById(id),F="abcdefgh",G={K:"♚",Q:"♛",R:"♜",B:"♝",N:"♞",P:"♟"};
+const N8=[[-2,-1],[-2,1],[-1,-2],[-1,2],[1,-2],[1,2],[2,-1],[2,1]];
+const D8=[[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]];
+const DG=D8.filter(d=>d[0]&&d[1]),OR=D8.filter(d=>!(d[0]&&d[1]));
+const V={P:100,N:320,B:330,R:500,Q:900,K:0};
+const isW=p=>p===p.toUpperCase(),sqn=i=>F[i&7]+(8-(i>>3));
+
+function att(b,sq,w){
+ const r=sq>>3,c=sq&7,at=(y,x)=>y>=0&&y<8&&x>=0&&x<8?b[y*8+x]:null;
+ const P=w?"P":"p",pr=w?r+1:r-1;
+ if(at(pr,c-1)===P||at(pr,c+1)===P)return true;
+ for(const[y,x]of N8)if(at(r+y,c+x)===(w?"N":"n"))return true;
+ for(const[y,x]of D8){
+  if(at(r+y,c+x)===(w?"K":"k"))return true;
+  let rr=r+y,cc=c+x,z;
+  while((z=at(rr,cc))==="")rr+=y,cc+=x;
+  if(z===(w?"Q":"q")||z===(y&&x?(w?"B":"b"):(w?"R":"r")))return true;
+ }
+ return false;
+}
+function gen(s){
+ const b=s.b,w=s.t==="w",m=[];
+ for(let i=0;i<64;i++){
+  const p=b[i];if(!p||isW(p)!==w)continue;
+  const r=i>>3,c=i&7,u=p.toUpperCase(),add=(t,x)=>m.push({f:i,t,p,cap:b[t],...x});
+  if(u==="P"){
+   const d=w?-1:1,last=w?0:7,r1=r+d;
+   const push=(t,x)=>{if((t>>3)===last)for(const q of"QRBN")add(t,{...x,pr:q});else add(t,x)};
+   if(!b[r1*8+c]){push(r1*8+c,{});if(r===(w?6:1)&&!b[(r+2*d)*8+c])add((r+2*d)*8+c,{dbl:1})}
+   for(const dc of[-1,1]){
+    const cc=c+dc;if(cc<0||cc>7)continue;
+    const t=r1*8+cc,x=b[t];
+    if(x&&isW(x)!==w)push(t,{});else if(t===s.ep)add(t,{ep:1,cap:w?"p":"P"});
+   }
+  }else if(u==="N"||u==="K"){
+   for(const[y,x]of(u==="N"?N8:D8)){
+    const rr=r+y,cc=c+x;if(rr<0||rr>7||cc<0||cc>7)continue;
+    const z=b[rr*8+cc];if(!z||isW(z)!==w)add(rr*8+cc,{});
+   }
+   if(u==="K"&&i===(w?60:4)&&!att(b,i,!w)){
+    const R=w?"R":"r";
+    if(s.c.includes(w?"K":"k")&&!b[i+1]&&!b[i+2]&&b[i+3]===R&&!att(b,i+1,!w)&&!att(b,i+2,!w))add(i+2,{ck:1});
+    if(s.c.includes(w?"Q":"q")&&!b[i-1]&&!b[i-2]&&!b[i-3]&&b[i-4]===R&&!att(b,i-1,!w)&&!att(b,i-2,!w))add(i-2,{cq:1});
+   }
+  }else{
+   for(const[y,x]of(u==="B"?DG:u==="R"?OR:D8)){
+    let rr=r+y,cc=c+x;
+    while(rr>=0&&rr<8&&cc>=0&&cc<8){
+     const z=b[rr*8+cc];
+     if(!z)add(rr*8+cc,{});else{if(isW(z)!==w)add(rr*8+cc,{});break}
+     rr+=y;cc+=x;
+    }
+   }
+  }
+ }
+ return m;
+}
+function mk(s,m){
+ const b=s.b.slice(),w=s.t==="w";
+ b[m.t]=m.pr?(w?m.pr:m.pr.toLowerCase()):m.p;b[m.f]="";
+ if(m.ep)b[m.t+(w?8:-8)]="";
+ if(m.ck){b[m.t-1]=b[m.t+1];b[m.t+1]=""}
+ if(m.cq){b[m.t+1]=b[m.t-2];b[m.t-2]=""}
+ let c=s.c;const mp={60:"KQ",4:"kq",63:"K",56:"Q",7:"k",0:"q"};
+ for(const q of[m.f,m.t])if(mp[q])for(const ch of mp[q])c=c.replace(ch,"");
+ return{b,t:w?"b":"w",c,ep:m.dbl?(m.f+m.t)/2:-1,hm:(m.p.toUpperCase()==="P"||m.cap)?0:s.hm+1};
+}
+const ksq=(b,w)=>b.indexOf(w?"K":"k");
+const inCheck=s=>{const w=s.t==="w";return att(s.b,ksq(s.b,w),!w)};
+function legal(s){const w=s.t==="w";return gen(s).filter(m=>{const n=mk(s,m);return!att(n.b,ksq(n.b,w),!w)})}
+function san(s,m,L){
+ const u=m.p.toUpperCase();let o;
+ if(m.free)return(u==="P"?"":u)+sqn(m.f)+(m.cap?"x":"-")+sqn(m.t)+(m.pr?"="+m.pr:"");
+ if(m.ck)o="O-O";else if(m.cq)o="O-O-O";
+ else if(u==="P")o=(m.cap?F[m.f&7]+"x":"")+sqn(m.t)+(m.pr?"="+m.pr:"");
+ else{
+  const am=L.filter(x=>x!==m&&x.p===m.p&&x.t===m.t);let d="";
+  if(am.length){
+   if(!am.some(x=>(x.f&7)===(m.f&7)))d=F[m.f&7];
+   else if(!am.some(x=>(x.f>>3)===(m.f>>3)))d=8-(m.f>>3);
+   else d=sqn(m.f);
+  }
+  o=u+d+(m.cap?"x":"")+sqn(m.t);
+ }
+ const n=mk(s,m);
+ if(inCheck(n))o+=legal(n).length?"+":"#";
+ return o;
+}
+function insuf(b){
+ const ps=[];
+ b.forEach((p,i)=>{if(p&&p.toUpperCase()!=="K")ps.push([p.toUpperCase(),((i>>3)+(i&7))&1])});
+ if(!ps.length)return true;
+ if(ps.length===1&&"BN".includes(ps[0][0]))return true;
+ return ps.every(p=>p[0]==="B"&&p[1]===ps[0][1]);
+}
+const key=s=>s.b.map(x=>x||"1").join("")+s.t+s.c+s.ep;
+
+/* computer opponent: 3-ply alpha-beta on material and position */
+function ev(s){
+ let x=0;
+ s.b.forEach((p,i)=>{
+  if(!p)return;
+  const w=isW(p),u=p.toUpperCase(),r=i>>3,c=i&7;
+  let v=V[u];
+  if("PNB".includes(u))v+=(7-Math.abs(r-3.5)-Math.abs(c-3.5))*3;
+  if(u==="P")v+=(w?6-r:r-1)*6;
+  x+=w?v:-v;
+ });
+ return x;
+}
+function nm(s,d,a,b){
+ if(!d)return(s.t==="w"?1:-1)*ev(s);
+ const L=legal(s);
+ if(!L.length)return inCheck(s)?-99999-d:0;
+ L.sort((x,y)=>(y.cap?V[y.cap.toUpperCase()]:0)-(x.cap?V[x.cap.toUpperCase()]:0));
+ for(const m of L){const v=-nm(mk(s,m),d-1,-b,-a);if(v>=b)return b;if(v>a)a=v}
+ return a;
+}
+function brainMove(){
+ const b=new Int8Array(128),T={P:1,N:2,B:3,R:4,Q:5,K:6},tx=i=>((7-(i>>3))<<4)|(i&7);
+ S.b.forEach((p,i)=>{if(p){const v=T[p.toUpperCase()];b[tx(i)]=isW(p)?v:-v}});
+ const c=(S.c.includes("K")?1:0)|(S.c.includes("Q")?2:0)|(S.c.includes("k")?4:0)|(S.c.includes("q")?8:0);
+ const pos={b,s:S.t==="w"?1:-1,c,ep:S.ep>=0?tx(S.ep):-1,h:S.hm,k:[tx(ksq(S.b,true)),tx(ksq(S.b,false))]};
+ const r=CH.pick(window.getK(),pos,null,{nz:15,eps:0,sm:1,max:160,bk:100});
+ if(!r)return null;
+ const f=r.m&127,t=r.m>>7&127,fi=(7-(f>>4))*8+(f&7),ti=(7-(t>>4))*8+(t&7);
+ return moves.find(m=>m.f===fi&&m.t===ti&&(!m.pr||m.pr==="Q"))||null}
+function best(){
+ if($("lb").checked&&window.getK){try{const m=brainMove();if(m)return m}catch(e){}}
+ let bm=null,bv=-Infinity;
+ for(const m of moves){
+  const v=-nm(mk(S,m),2,-1e9,1e9)+(m.pr==="Q"?50:0);
+  if(v>bv||(v===bv&&Math.random()<.35)){bv=v;bm=m}
+ }
+ return bm;
+}
+
+/* game state */
+let S,hist,keys,moves,sel,fl=false,over,last,tm,pend;
+function init(){
+ const b=[..."rnbqkbnr",...Array(8).fill("p"),...Array(32).fill(""),...Array(8).fill("P"),..."RNBQKBNR"];
+ S={b,t:"w",c:"KQkq",ep:-1,hm:0};hist=[];keys=[key(S)];sel=-1;last=null;pend=null;
+ moves=legal(S);over=null;$("er").textContent="";draw();kick();
+}
+function status(){
+ const wk=S.b.includes("K"),bk=S.b.includes("k");
+ if(!wk||!bk)return"King captured. "+(wk?"White":"Black")+" wins.";
+ if(md()==="f")return null;
+ if(!moves.length)return inCheck(S)?"Checkmate. "+(S.t==="w"?"Black":"White")+" wins.":"Stalemate. The game is a draw.";
+ if(insuf(S.b))return"Draw. Not enough material to checkmate.";
+ if(S.hm>=100)return"Draw by the 50-move rule.";
+ const k=key(S);
+ if(keys.filter(x=>x===k).length>=3)return"Draw by threefold repetition.";
+ return null;
+}
+const md=()=>$("md").value;
+const cpuTurn=()=>md()==="c"||(md()==="w"&&S.t==="b")||(md()==="b"&&S.t==="w");
+function kick(){clearTimeout(tm);if(!over&&cpuTurn())tm=setTimeout(()=>{if(!over&&cpuTurn())play(best())},400)}
+function play(m){
+ const s=san(S,m,moves);
+ hist.push({p:S,san:s,m});S=mk(S,m);keys.push(key(S));
+ last=m;sel=-1;pend=null;moves=legal(S);over=status();
+ $("in").value="";$("er").textContent="";draw();kick();
+}
+function draw(){
+ const ck=inCheck(S)?ksq(S.b,S.t==="w"):-1;
+ const tg=sel>=0?moves.filter(m=>m.f===sel).map(m=>m.t):[];
+ let h="";
+ for(let k=0;k<64;k++){
+  const i=fl?63-k:k,r=i>>3,c=i&7,p=S.b[i];
+  const cl=["sq",(r+c)%2?"d":"l"];
+  if(i===sel)cl.push("sel");
+  if(last&&(i===last.f||i===last.t))cl.push("lm");
+  if(i===ck)cl.push("ck");
+  if(tg.includes(i))cl.push(p?"cap":"dot");
+  h+=`<div class="${cl.join(" ")}" data-i="${i}">${p?`<b class="${isW(p)?"w":"k"}">${G[p.toUpperCase()]}\uFE0E</b>`:""}${c===(fl?7:0)?`<i>${8-r}</i>`:""}${r===(fl?0:7)?`<u>${F[c]}</u>`:""}</div>`;
+ }
+ $("bd").innerHTML=h;
+ const side=S.t==="w"?"White":"Black";
+ $("st").textContent=over||(side+(inCheck(S)?" is in check":" to move")+(cpuTurn()?" (computer)":"")+(md()==="f"?" (free play)":""));
+ $("ml").textContent=hist.length?hist.map((x,i)=>(i%2?"":(i/2+1)+". ")+x.san).join(" "):"Moves will appear here.";
+ $("ml").scrollTop=1e5;
+ const pr=$("pr");
+ if(pend){
+  const w=S.t==="w";
+  pr.hidden=false;
+  pr.innerHTML="Promote to"+[..."QRBN"].map(q=>`<button data-q="${q}" class="${w?"w":"k"}" style="-webkit-text-stroke:${w?"1px #15202a":"0"};color:${w?"#fff":"#161c20"}">${G[q]}\uFE0E</button>`).join("");
+ }else pr.hidden=true;
+}
+$("pr").onclick=e=>{const q=e.target.closest("button");if(!q)return;const m=pend.find(x=>x.pr===q.dataset.q);play(m)};
+$("bd").onclick=e=>{
+ const q=e.target.closest(".sq");
+ if(!q||over||cpuTurn())return;
+ const i=+q.dataset.i,mv=md()==="f"?fm(sel,i):moves.filter(m=>m.f===sel&&m.t===i);
+ if(mv.length){if(mv.length>1){pend=mv;draw()}else play(mv[0]);return}
+ const p=S.b[i];pend=null;
+ sel=(p&&isW(p)===(S.t==="w")&&(md()==="f"||moves.some(m=>m.f===i)))?i:-1;draw();
+};
+function fm(f,t){
+ const p=S.b[f],w=S.t==="w",x=S.b[t];
+ if(!p||f===t||isW(p)!==w||(x&&isW(x)===w))return[];
+ const L=moves.filter(m=>m.f===f&&m.t===t);
+ if(L.length)return L;
+ const m={f,t,p,cap:x,free:1};
+ if(p.toUpperCase()==="P"&&(t>>3)===(w?0:7))return[..."QRBN"].map(q=>({...m,pr:q}));
+ return[m];
+}
+function freeText(raw){
+ const x=raw.replace(/[\s\-x=+#!?:]/g,""),w=S.t==="w",ix=s=>(8-s[1])*8+F.indexOf(s[0]);
+ const er=t=>{$("er").textContent=t;return true};
+ let m,c=[],t,q;
+ const scan=ok=>{for(let i=0;i<64;i++)if(ok(i,S.b[i]))c.push(i)};
+ if(m=x.match(/^([a-h][1-8])([a-h][1-8])([qrbn])?$/i)){c=[ix(m[1].toLowerCase())];t=ix(m[2].toLowerCase());q=m[3]}
+ else if(m=x.match(/^([KQRBN])([a-h])?([1-8])?([a-h][1-8])$/)){const p=w?m[1]:m[1].toLowerCase();t=ix(m[4]);scan((i,z)=>z===p&&(!m[2]||F[i&7]===m[2])&&(!m[3]||8-(i>>3)==m[3]))}
+ else if(m=x.match(/^([a-h])?([a-h][1-8])([QRBN])?$/)){const p=w?"P":"p",fi=m[1]||m[2][0];t=ix(m[2]);q=m[3];scan((i,z)=>z===p&&F[i&7]===fi)}
+ else return false;
+ c=c.filter(i=>fm(i,t).length);
+ if(!c.length)return er("No piece of yours can go there.");
+ if(c.length>1)return er("Ambiguous. Use coordinates, like e2e4.");
+ const L=fm(c[0],t);
+ play(L.find(z=>!z.pr||z.pr===(q||"Q").toUpperCase())||L[0]);return true;
+}
+const nrm=x=>x.replace(/0/g,"O").replace(/[+#!?x=\s-]/g,"");
+function submit(){
+ if(over||cpuTurn())return;
+ const raw=$("in").value.trim();if(!raw)return;
+ const x=nrm(raw),E=moves.map(m=>[m,nrm(san(S,m,moves)),sqn(m.f)+sqn(m.t)+(m.pr||"")]);
+ let r=E.filter(e=>e[1]===x||e[2]===x);
+ if(!r.length){const y=x.toLowerCase();r=E.filter(e=>e[1].toLowerCase()===y||e[2].toLowerCase()===y)}
+ if(r.length===1)play(r[0][0]);
+ else if(!r.length&&md()==="f"&&freeText(raw)){}
+ else $("er").textContent=r.length?"Ambiguous. Use a capital letter for pieces (B for bishop).":
+  (E.some(e=>e[0].pr&&(e[1].startsWith(x)||e[2].startsWith(x)))?"Add the promotion piece, like e8=Q.":"Not a legal move. Try e4, Nf3, Nbd2, O-O or e8=Q.");
+}
+$("go").onclick=submit;
+$("in").onkeydown=e=>{if(e.key==="Enter")submit()};
+$("nw").onclick=init;
+$("fl").onclick=()=>{fl=!fl;draw()};
+$("md").onchange=()=>{sel=-1;pend=null;moves=legal(S);over=status();draw();kick()};
+$("un").onclick=()=>{
+ if(!hist.length)return;
+ const pop=()=>{S=hist.pop().p;keys.pop()};
+ pop();
+ if(md()!=="2"&&md()!=="c"&&cpuTurn()&&hist.length)pop();
+ last=hist.length?hist[hist.length-1].m:null;sel=-1;pend=null;
+ moves=legal(S);over=status();$("er").textContent="";draw();kick();
+};
+function fen(){
+ const rows=[];
+ for(let r=0;r<8;r++){let o="",e=0;for(let c=0;c<8;c++){const p=S.b[r*8+c];if(p){if(e){o+=e;e=0}o+=p}else e++}if(e)o+=e;rows.push(o)}
+ return rows.join("/")+" "+S.t+" "+(S.c||"-")+" "+(S.ep>=0?sqn(S.ep):"-")+" "+S.hm+" "+(Math.floor(hist.length/2)+1);
+}
+$("ai").onclick=async()=>{
+ const side=S.t==="w"?"White":"Black",b=$("ai");
+ const t=`We are playing chess and you are ${side}.\n\nPosition (FEN): ${fen()}\n\nMoves so far: ${hist.length?hist.map((x,i)=>(i%2?"":(i/2+1)+". ")+x.san).join(" "):"none"}\n\n${md()==="f"?"Rules: illegal moves are allowed in this game. You may move any of your pieces to any square not holding your own piece. The game ends when a king is captured. Reply with only your move, in coordinates like e2e5 or standard notation like Nf3.":"Your legal moves: "+moves.map(m=>san(S,m,moves)).join(" ")+"\n\nPick the best move from the legal moves. Reply with only that move in standard algebraic notation, like Nf3, exd5, O-O or e8=Q."}`;
+ const box=$("pt");box.hidden=false;box.value=t;box.focus();box.select();
+ try{await navigator.clipboard.writeText(t);b.textContent="Copied. Paste it to your AI"}catch(e){b.textContent="Select the text below and copy it"}
+ setTimeout(()=>b.textContent="Copy position for AI",2500);
+};
+
+$("tb").onclick=()=>{$("pb").hidden=false;$("pl").hidden=true;$("tb").className="p";$("tl").className=""};
+$("tl").onclick=()=>{$("pb").hidden=true;$("pl").hidden=false;$("tl").className="p";$("tb").className=""};
+init();
+</script>
+<script id="eng">(()=>{
+const D={N:[-33,-31,-18,-14,14,18,31,33],K:[-17,-16,-15,-1,1,15,16,17],B:[-17,-15,15,17],R:[-16,-1,1,16]};D.Q=D.B.concat(D.R);
+const SV=[0,100,320,330,500,900,0],CM=new Uint8Array(128).fill(15),PASS='ai-chess-brain-v1',C=globalThis.crypto||require('crypto').webcrypto;
+CM[0]=13;CM[7]=14;CM[4]=12;CM[112]=7;CM[119]=11;CM[116]=3;
+const IX=(s,f)=>s>0?((f>>4)<<3)|(f&7):((7-(f>>4))<<3)|(f&7);
+const ev=(S,x,q,s)=>S.V[x-1]+S.P[(x-1)*64+IX(s,q)];
+const fresh=()=>({g:0,w:0,d:0,l:0,V:[100,320,330,500,900,0],P:new Array(384).fill(0),op:{},mv:{},sac:{},miss:{},tag:{}});
+function start(){const b=new Int8Array(128),B=[4,2,3,5,6,3,2,4];for(let i=0;i<8;i++){b[i]=B[i];b[16+i]=1;b[96+i]=-1;b[112+i]=-B[i]}return{b,s:1,c:15,ep:-1,h:0,k:[4,116]}}
+function att(b,s,c){
+ for(const d of D.N){const t=s+d;if(!(t&136)&&b[t]===2*c)return 1}
+ for(const d of D.K){const t=s+d;if(!(t&136)&&b[t]===6*c)return 1}
+ for(const d of c>0?[-15,-17]:[15,17]){const t=s+d;if(!(t&136)&&b[t]===c)return 1}
+ for(const d of D.B){let t=s+d;while(!(t&136)){const x=b[t]*c;if(x){if(x===3||x===5)return 1;break}t+=d}}
+ for(const d of D.R){let t=s+d;while(!(t&136)){const x=b[t]*c;if(x){if(x===4||x===5)return 1;break}t+=d}}
+ return 0}
+function gen(p){const{b,s,c,ep}=p,o=[],R=s>0?7:0;
+ for(let f=0;f<128;f++){if(f&136){f+=7;continue}const x=b[f]*s;if(x<=0)continue;
+  if(x===1){const u=16*s,t=f+u;
+   if(!b[t]){o.push(f|t<<7|((t>>4)===R?5<<14:0));if((f>>4)===(s>0?1:6)&&!b[t+u])o.push(f|(t+u)<<7|3<<17)}
+   for(const d of[u-1,u+1]){const q=f+d;if(q&136)continue;if(b[q]*s<0)o.push(f|q<<7|((q>>4)===R?5<<14:0));else if(q===ep)o.push(f|q<<7|1<<17)}
+  }else if(x===2||x===6){for(const d of x===2?D.N:D.K){const q=f+d;if(!(q&136)&&b[q]*s<=0)o.push(f|q<<7)}}
+  else for(const d of x===3?D.B:x===4?D.R:D.Q){let q=f+d;while(!(q&136)){if(b[q]*s>0)break;o.push(f|q<<7);if(b[q])break;q+=d}}}
+ const ob=s>0?0:112,kb=s>0?1:4;
+ if(c&(kb|kb*2)&&!att(b,ob+4,-s)){
+  if(c&kb&&!b[ob+5]&&!b[ob+6]&&!att(b,ob+5,-s))o.push((ob+4)|(ob+6)<<7|2<<17);
+  if(c&kb*2&&!b[ob+1]&&!b[ob+2]&&!b[ob+3]&&!att(b,ob+3,-s))o.push((ob+4)|(ob+2)<<7|2<<17)}
+ return o}
+function mk(p,m){const b=p.b.slice(),f=m&127,t=m>>7&127,pr=m>>14&7,fl=m>>17,s=p.s,x=b[f],k=p.k.slice();let cap=Math.abs(b[t]);
+ b[f]=0;b[t]=pr?pr*s:x;
+ if(fl===1){b[t-16*s]=0;cap=1}
+ if(fl===2){if(t>f){b[t-1]=b[t+1];b[t+1]=0}else{b[t+1]=b[t-2];b[t-2]=0}}
+ if(x*s===6)k[s>0?0:1]=t;
+ return{b,s:-s,c:p.c&CM[f]&CM[t],ep:fl===3?(f+t)>>1:-1,h:(x*s===1||cap)?0:p.h+1,k,cap}}
+function legal(p){const r=[],i=p.s>0?0:1;for(const m of gen(p)){const q=mk(p,m);if(!att(q.b,q.k[i],-p.s))r.push([m,q])}return r}
+const perft=(p,d)=>{if(!d)return 1;let n=0;for(const[,q]of legal(p))n+=perft(q,d-1);return n};
+function pick(S,p,key,o){
+ const L=legal(p);if(!L.length)return null;const s=p.s,i=s>0?0:1;let best=-1e9,bj=0,mj=-1;
+ for(let j=0;j<L.length;j++){const[m,q]=L[j],f=m&127,t=m>>7&127,x=Math.abs(p.b[f]),pr=m>>14&7,c=q.cap,ck=att(q.b,q.k[1-i],s);
+  if(ck&&!legal(q).length)mj=j;
+  let sc=ev(S,x,t,s)-ev(S,x,f,s)+(c?ev(S,c,t,-s):0)+(pr?ev(S,5,t,s)-ev(S,1,t,s):0)+(ck?20:0)+Math.random()*o.nz;
+  if(o.sm&&att(q.b,t,-s))sc-=att(q.b,t,s)?Math.max(0,S.V[x-1]-(c?S.V[c-1]:0)):S.V[x-1];
+  if(key!=null){const e=S.op[key+(m&16383)+','];if(e){const n=e[0]+e[1]+e[2];sc+=o.bk*(((s>0?e[0]:e[2])+e[1]/2)/n-.5)*Math.min(1,n/5)+30/Math.sqrt(n+1)}else sc+=30}
+  const w=S.mv[(x*7+c)*64+IX(s,t)];if(w&&w[0]>9)sc+=40*(w[1]-w[2])/w[0];
+  if(sc>best){best=sc;bj=j}}
+ const ch=Math.random()<o.eps?Math.random()*L.length|0:mj>=0?mj:bj;
+ const id=j=>{const[m,q]=L[j];return(Math.abs(p.b[m&127])*7+q.cap)*64+IX(s,m>>7&127)};
+ const[m,q]=L[ch],x=Math.abs(p.b[m&127]),c=q.cap,pr=m>>14&7,fl=m>>17,tg=[c?(SV[c]>SV[x]?'winning capture':'capture'):'quiet'];
+ if(att(q.b,q.k[1-i],s))tg.push('check');if(pr)tg.push('promotion');if(fl===2)tg.push('castle');if(fl===1)tg.push('en passant');
+ return{m,q,id:id(ch),tg,g:SV[c]+(pr?800:0),ms:mj>=0&&ch!==mj?id(mj):null}}
+const up=(o,k,v)=>{const a=o[k]||(o[k]=v.map(()=>0));v.forEach((x,i)=>a[i]+=+x)};
+function game(S,D,o){let p=start(),key='',B=[],R=[],smp=[],mats=[0],mat=0,ply=0,res=0;
+ for(;;){const r=pick(S,p,ply<10?key:null,o);
+  if(!r){res=att(p.b,p.k[p.s>0?0:1],-p.s)?-p.s:0;break}
+  R.push({s:p.s,id:r.id,tg:r.tg,ms:r.ms});
+  if(ply<10){key+=(r.m&16383)+',';B.push(key)}
+  mat+=p.s*r.g;mats.push(mat);if(ply%3===1)smp.push(r.q.b);
+  p=r.q;ply++;if(p.h>=100||ply>=o.max){res=Math.abs(mat)>=300?Math.sign(mat):0;break}}
+ D.g++;D[res>0?'w':res<0?'l':'d']++;const ri=res>0?0:res<0?2:1,n=R.length;
+ for(const k of B)up(D.op,k,[ri===0,ri===1,ri===2]);
+ R.forEach((r,i)=>{const s=r.s,z=res*s,d=(mats[Math.min(i+2,n)]-mats[i])*s,a=[1,z>0,z<0,d];
+  up(D.mv,r.id,a);for(const t of r.tg)up(D.tag,t,a);
+  if(d<=-200)up(D.sac,r.id,[1,z>0,(mats[Math.min(i+4,n)]-mats[i])*s>=-100]);
+  if(r.ms!=null)up(D.miss,r.ms,[1])});
+ for(const b of smp){let e=0;for(let f=0;f<128;f++){if(f&136){f+=7;continue}const x=b[f];if(x)e+=Math.sign(x)*ev(S,Math.abs(x),f,Math.sign(x))}
+  const pr=Math.tanh(e/500),g=.5*(res-pr)*(1-pr*pr);
+  for(let f=0;f<128;f++){if(f&136){f+=7;continue}const x=b[f];if(!x)continue;const a=Math.abs(x),sg=Math.sign(x),j=(a-1)*64+IX(sg,f);
+   S.P[j]=Math.max(-200,Math.min(200,S.P[j]+g*sg));if(a<6)S.V[a-1]=Math.max(30,Math.min(2000,S.V[a-1]+g*sg*.3))}}}
+function batch(S,ms,o){const D={g:0,w:0,d:0,l:0,op:{},mv:{},sac:{},miss:{},tag:{}},V0=S.V.slice(),P0=S.P.slice(),t=Date.now();let n=0;
+ while(Date.now()-t<ms){game(S,D,o);n++}
+ return{D,n,dV:S.V.map((v,i)=>v-V0[i]),dP:S.P.map((v,i)=>v-P0[i])}}
+function merge(K,R,N){const D=R.D;for(const k of['g','w','d','l'])K[k]+=D[k];
+ for(const s of['op','mv','sac','miss','tag']){const a=K[s];for(const k in D[s]){const v=D[s][k],x=a[k];if(x)v.forEach((y,i)=>x[i]+=y);else a[k]=v}}
+ R.dV.forEach((d,i)=>K.V[i]+=d/N);R.dP.forEach((d,i)=>K.P[i]+=d/N);
+ if(Object.keys(K.op).length>40000)for(const k in K.op){const e=K.op[k];if(e[0]+e[1]+e[2]<3)delete K.op[k]}}
+async function ky(pw,salt){const m=await C.subtle.importKey('raw',new TextEncoder().encode(pw),'PBKDF2',false,['deriveKey']);return C.subtle.deriveKey({name:'PBKDF2',salt,iterations:100000,hash:'SHA-256'},m,{name:'AES-GCM',length:256},false,['encrypt','decrypt'])}
+const rd=async s=>new Uint8Array(await new Response(s).arrayBuffer());
+async function pack(K,pw){const z=await rd(new Blob([JSON.stringify(K)]).stream().pipeThrough(new CompressionStream('deflate-raw'))),salt=C.getRandomValues(new Uint8Array(16)),iv=C.getRandomValues(new Uint8Array(12)),c=new Uint8Array(await C.subtle.encrypt({name:'AES-GCM',iv},await ky(pw,salt),z)),o=new Uint8Array(28+c.length);o.set(salt);o.set(iv,16);o.set(c,28);return o}
+async function unpack(u,pw){const z=new Uint8Array(await C.subtle.decrypt({name:'AES-GCM',iv:u.slice(16,28)},await ky(pw,u.slice(0,16)),u.slice(28)));return JSON.parse(await new Response(new Blob([z]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).text())}
+const CH={fresh,batch,merge,pack,unpack,PASS,start,legal,perft,pick};
+if(typeof module!=='undefined')module.exports=CH;else globalThis.CH=CH;
+})();
+</script>
+<script>(()=>{
+const $=i=>document.getElementById(i);let K,ws=[],on=0,N=1,t0=0,g0=0;window.getK=()=>K;
+$('lnw').value=Math.min(navigator.hardwareConcurrency||4,16);
+const opts=()=>$('lmd').value==1?{nz:25,eps:.05,sm:1,max:160,bk:100}:{nz:60,eps:.05,sm:0,max:120,bk:100};
+const b64=u=>new Promise(r=>{const f=new FileReader();f.onload=()=>r(f.result.split(',')[1]);f.readAsDataURL(new Blob([u]))});
+async function save(){try{localStorage.brain=await b64(await CH.pack(K,CH.PASS))}catch(e){}}
+async function load(){let a=null,b=null;
+ try{if(localStorage.brain)a=await CH.unpack(Uint8Array.from(atob(localStorage.brain),c=>c.charCodeAt(0)),CH.PASS)}catch(e){}
+
+ K=a&&(!b||a.g>=b.g)?a:b||CH.fresh()}
+const nm=id=>{const q=id%64,r=id/64|0;return'PNBRQK'[(r/7|0)-1]+(r%7?'x'+'.PNBRQK'[r%7]:'')+'→'+'abcdefgh'[q%8]+(1+(q>>3))};
+const mvs=k=>k.split(',').filter(Boolean).map(v=>{v=+v;const s=x=>'abcdefgh'[x&7]+((x>>4)+1);return s(v&127)+s(v>>7)}).join(' ');
+const pc=x=>Math.round(x*100)+'%',pw=x=>(x/100).toFixed(2);
+const top=(o,min,f,asc,k=3)=>Object.entries(o).filter(([,a])=>a[0]>=min).map(([id,a])=>[id,f(a),a[0]]).sort((x,y)=>asc?x[1]-y[1]:y[1]-x[1]).slice(0,k);
+const sec=(t,r)=>`<section><h3>${t}</h3>${r.length?r.map(x=>`<div><span>${x[0]}</span><b>${x[1]}</b></div>`).join(''):'<i>still learning…</i>'}</section>`;
+function draw(){const rate=on?Math.round((K.g-g0)/((Date.now()-t0)/1000)):0;
+ $('lst').textContent=K.g.toLocaleString()+' games'+(on?' · '+rate+'/s':'');$('lsub').textContent=`White ${K.w} · Draw ${K.d} · Black ${K.l}`;
+ const O=Object.entries(K.op).map(([k,a])=>{const n=a[0]+a[1]+a[2];return[k,(a[0]+a[1]/2)/n,n]}).filter(x=>x[2]>=8&&x[0].split(',').length>4);
+ const wr=a=>(a[1]-a[2])/a[0],mat=a=>a[3]/a[0],M=(l,f)=>l.map(x=>[nm(x[0]),f(x)]);
+ $('lins').innerHTML=sec('Learned piece values (start 100/320/330/500/900)',['Pawn','Knight','Bishop','Rook','Queen'].map((n,i)=>[n,Math.round(K.V[i])]))
+ +sec('Best openings for White',[...O].sort((a,b)=>b[1]-a[1]).slice(0,3).map(x=>[mvs(x[0]),pc(x[1])+' · '+x[2]]))
+ +sec('Best openings for Black',[...O].sort((a,b)=>a[1]-b[1]).slice(0,3).map(x=>[mvs(x[0]),pc(1-x[1])+' · '+x[2]]))
+ +sec('Moves that win most',M(top(K.mv,20,wr),x=>pc(x[1])))+sec('Moves that lose most',M(top(K.mv,20,wr,1),x=>pc(x[1])))
+ +sec('Moves that win material',M(top(K.mv,20,mat),x=>'+'+pw(x[1])))+sec('Moves that lose material',M(top(K.mv,20,mat,1),x=>pw(x[1])))
+ +sec('Sacrifices that worked',M(top(K.sac,5,a=>a[1]/a[0]),x=>pc(x[1])+' win · '+x[2]))+sec('Sacrifices that flopped',M(top(K.sac,5,a=>a[1]/a[0],1),x=>pc(x[1])+' win · '+x[2]))
+ +sec('Tactics (win rate · avg material)',top(K.tag,10,wr,0,8).map(x=>[x[0],pc(wr(K.tag[x[0]])/2+.5)+' · '+pw(mat(K.tag[x[0]]))]))
+ +sec('Missed mate-in-1 (move it should have played)',Object.entries(K.miss).sort((a,b)=>b[1][0]-a[1][0]).slice(0,3).map(([id,a])=>[nm(+id),'×'+a[0]]))}
+function fb(){const w={terminate(){this.x=1}};(function t(){if(on&&!w.x){CH.merge(K,CH.batch(structuredClone(K),150,opts()),1);setTimeout(t,0)}})();return w}
+$('lgo').onclick=()=>{on=!on;$('lgo').textContent=on?'Stop':'Start';
+ if(on){N=+$('lnw').value||1;t0=Date.now();g0=K.g;ws=[];let fell=0;
+  const mk=()=>{let w;const go=()=>w.postMessage({K,ms:1500,o:opts()});
+   try{w=new Worker(URL.createObjectURL(new Blob([$('eng').textContent+';onmessage=e=>postMessage(CH.batch(e.data.K,e.data.ms,e.data.o))'])));ws.push(w);
+    w.onmessage=e=>{CH.merge(K,e.data,N);on&&go()};w.onerror=()=>{w.terminate();if(!fell++)ws.push(fb())};go()}catch(x){if(!fell++)ws.push(fb())}};
+  for(let i=0;i<N;i++)mk()}
+ else{ws.forEach(w=>w.terminate());ws=[];save()}};
+$('dl').onclick=async()=>{const s=await b64(await CH.pack(K,CH.PASS));$('box').value=s;try{await navigator.clipboard.writeText(s)}catch(e){}};
+$('ul').onclick=async()=>{try{K=await CH.unpack(Uint8Array.from(atob($('box').value.trim()),c=>c.charCodeAt(0)),CH.PASS);draw()}catch(x){$('lsub').textContent='That is not a valid brain code'}};
+$('rs').onclick=()=>{const r=$('rs');if(r.dataset.s){K=CH.fresh();try{localStorage.removeItem('brain')}catch(e){}draw();delete r.dataset.s;r.textContent='Reset'}else{r.dataset.s=1;r.textContent='Tap again to erase';setTimeout(()=>{delete r.dataset.s;r.textContent='Reset'},3000)}};
+load().then(()=>{draw();setInterval(draw,2000);setInterval(()=>on&&save(),20000)});
+})()</script></body></html>
