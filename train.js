@@ -1,6 +1,24 @@
-// node train.js [seconds] - headless self-play, saves brain/brain.aienc
-const fs=require('fs'),CH=require('./engine.js'),F='brain/brain.aienc';
-(async()=>{let K;try{K=await CH.unpack(new Uint8Array(fs.readFileSync(F)),CH.PASS)}catch{K=CH.fresh()}
- const T=+(process.argv[2]||60)*1000,t=Date.now(),g=K.g,o={nz:25,eps:.05,sm:1,max:160,bk:100};
- while(Date.now()-t<T)CH.merge(K,CH.batch(structuredClone(K),1500,o),1);
- fs.mkdirSync('brain',{recursive:true});fs.writeFileSync(F,await CH.pack(K,CH.PASS));console.log('games',K.g-g,'total',K.g)})();
+name: Train AI
+on:
+  schedule: [{cron: '0 */6 * * *'}]
+  workflow_dispatch:
+    inputs: {seconds: {description: 'Training seconds', default: '600'}}
+permissions: {contents: write, actions: write}
+concurrency: {group: repo-writes, cancel-in-progress: false}
+jobs:
+  train:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: 20}
+      - run: node train.js ${{ inputs.seconds || 600 }}
+      - env: {GH_TOKEN: '${{ github.token }}'}
+        run: |
+          git config user.name chess-ai; git config user.email bot@users.noreply.github.com
+          git add brain; git commit -m "brain update" || exit 0
+          for i in 1 2 3; do
+            git pull --rebase origin main && git push && gh workflow run pages.yml && exit 0
+            sleep 5
+          done
+          exit 1
