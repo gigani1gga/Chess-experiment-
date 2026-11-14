@@ -1,0 +1,100 @@
+name: Organize uploads
+on:
+  push:
+    branches: [main]
+    paths-ignore: ['brain/**', 'needs-manual/**']   # any upload to the repo triggers it
+  workflow_dispatch:
+permissions: {contents: write, actions: write}
+concurrency: {group: repo-writes, cancel-in-progress: false}
+jobs:
+  organize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.ORGANIZE_TOKEN || github.token }}
+
+      - name: Organize uploads (unzip, rename copies, file everything, newest wins)
+        env:
+          HAS_PAT: ${{ secrets.ORGANIZE_TOKEN != '' }}
+        run: |
+          shopt -s nullglob
+          T=$(mktemp -d); C="$T/cands"; KEEP="$T/keep"; : > "$C"; : > "$KEEP"
+          LOG="${GITHUB_STEP_SUMMARY:-/dev/stdout}"; echo "### Organized" >> "$LOG"
+          log(){ echo "- $*" >> "$LOG"; }
+          ts(){ git log -1 --format=%ct -- "$1" 2>/dev/null | grep . || date +%s; }
+          # strips "(1)", "__1_", "_1", "copy", "- Copy (2)" ... so "index (2).html" / "pages__4_.yml" -> index.html / pages.yml
+          clean(){ local f="$1" s e b
+            if [[ "$f" == *.* && "$f" != .* ]]; then s="${f%.*}"; e=".${f##*.}"; else s="$f"; e=""; fi
+            for _ in 1 2 3; do s=$(printf '%s' "$s" | sed -E 's/[[:space:]]*\([0-9]+\)$//; s/__[0-9]+_$//; s/[ _-]*[Cc]opy([ _-]*\(?[0-9]+\)?)?$//'); done
+            if [[ "$s" =~ ^(.+)[_-]([0-9]+)$ ]]; then b="${BASH_REMATCH[1]}"
+              case "$b" in index|engine|worker|train|pages|organize|brain) s="$b";; *) [ -e "$b$e" ] && s="$b";; esac; fi
+            printf '%s%s' "$s" "$e"; }
+          cno(){ local f="$1" n; [ "$(clean "$f")" = "$f" ] && { echo 0; return; }
+            n=$(printf '%s' "${f%.*}" | grep -oE '[0-9]+_?$|\([0-9]+\)$' | grep -oE '[0-9]+' | tail -1); echo "${n:-1}"; }
+          dest(){ # $1=path inside bundle  $2=1 if zip (strip top folder)
+            local p="/$1" b; b=$(basename "$1")
+            case "$p" in
+              */.github/workflows/*) echo ".github/workflows/${p##*/.github/workflows/}"; return;;
+              */brain/*) echo "brain/${p##*/brain/}"; return;;
+            esac
+            case "$b" in
+              index.html|engine.js|worker.js|train.js) echo "$b"; return;;
+              pages.yml|train.yml|organize.yml) echo ".github/workflows/$b"; return;;
+              *.aienc) echo "brain/$b"; return;;
+              *.yml|*.yaml) [ -n "$3" ] && grep -qE '^jobs:' "$3" && { echo ".github/workflows/$b"; return; };;
+            esac
+            if [ "$2" = 1 ] && [[ "$1" == */* ]]; then echo "${1#*/}"; else echo "$1"; fi; }
+          add(){ # src rel mtime strip removable
+            case "$2" in *__MACOSX*|*.DS_Store) return;; esac
+            local b d; b=$(basename "$2"); d=$(dirname "$2"); [ "$d" = . ] && d=""
+            local rel="${d:+$d/}$(clean "$b")"
+            printf '%s\t%s\t%s\t%s\t%s\n' "$(dest "$rel" "$4" "$1")" "$3" "$(cno "$b")" "$1" "$5" >> "$C"; }
+          n=0
+          unzipit(){ n=$((n+1)); local d="$T/z$n" m; m=$(ts "$1"); mkdir -p "$d"; unzip -qo "$1" -d "$d"
+            while IFS= read -r -d '' f; do add "$f" "${f#$d/}" "$m" 1 0; done < <(find "$d" -type f -print0)
+            echo "$1" >> "$T/zips"; log "unzipped $1"; }
+          for f in *; do
+            [ -f "$f" ] || continue
+            case "${f,,}" in *.zip) unzipit "$f"; continue;; esac
+            k=$(clean "$f")
+            if [ "$k" != "$f" ] || [[ " index.html engine.js worker.js train.js pages.yml train.yml organize.yml " == *" $k "* ]] || [[ "$k" == *.aienc ]] || { [[ "$k" == *.yml || "$k" == *.yaml ]] && grep -qE '^jobs:' "$f"; }; then
+              add "$f" "$f" "$(ts "$f")" 0 1; fi
+          done
+          if [ -d inbox ]; then
+            while IFS= read -r -d '' f; do
+              [ "$(basename "$f")" = .gitkeep ] && continue
+              case "${f,,}" in *.zip) unzipit "$f";; *) add "$f" "${f#inbox/}" "$(ts "$f")" 0 1;; esac
+            done < <(find inbox -type f -print0)
+          fi
+          # newest wins; tie -> higher copy number (deterministic)
+          sort -t$'\t' -k1,1 -k2,2n -k3,3n "$C" | awk -F'\t' '{w[$1]=$0} END{for(k in w)print w[k]}' > "$T/win"
+          while IFS=$'\t' read -r d mt no src rm; do
+            t="$d"
+            if [[ "$d" == .github/workflows/* && "$HAS_PAT" != true ]]; then
+              t="needs-manual/$(basename "$d")"; log "$d: needs ORGANIZE_TOKEN secret, saved to $t"; fi
+            echo "$t" >> "$KEEP"
+            if [ -e "$t" ]; then
+              if cmp -s "$src" "$t"; then log "$t: identical, skipped"; continue; fi
+              if [ "$mt" -lt $(( $(ts "$t") - 86400 )) ]; then log "$t: existing is newer, skipped"; continue; fi
+            fi
+            mkdir -p "$(dirname "$t")"; cp "$src" "$t"; log "$t: updated"
+          done < "$T/win"
+          # clean up consumed uploads (never delete a file that is a destination)
+          while IFS=$'\t' read -r d mt no src rm; do
+            [ "$rm" = 1 ] && ! grep -Fxq -- "$src" "$KEEP" && rm -f -- "$src"
+          done < "$C"
+          [ -f "$T/zips" ] && while IFS= read -r z; do rm -f -- "$z"; done < "$T/zips"
+          rm -rf inbox; mkdir inbox; : > inbox/.gitkeep
+
+      - name: Commit, push, deploy
+        env: {GH_TOKEN: '${{ github.token }}'}
+        run: |
+          git config user.name chess-ai; git config user.email bot@users.noreply.github.com
+          git add -A; git commit -m "Organize uploads" || exit 0
+          for i in 1 2 3; do
+            git pull --rebase origin main && git push && gh workflow run pages.yml && exit 0
+            sleep 5
+          done
+          exit 1
