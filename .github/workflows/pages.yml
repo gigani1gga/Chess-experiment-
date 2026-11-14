@@ -12,11 +12,7 @@ jobs:
       url: ${{ steps.d.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
-      - name: Build site
-        run: |
-          mkdir -p _site/brain
-          cp index.html engine.js worker.js _site/
-          cp brain/* _site/brain/ 2>/dev/null || true
+      - run: mkdir _site && cp index.html _site/
       - uses: actions/upload-pages-artifact@v3
         with: {path: _site}
       - id: d
