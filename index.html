@@ -61,6 +61,7 @@ textarea{width:100%;margin-top:8px;height:150px;font:14px/1.4 ui-monospace,Menlo
 <select id="md"><option value="2">Two players</option><option value="w">You: White vs computer</option><option value="b">You: Black vs computer</option><option value="c">Computer vs computer</option><option value="f">Free play: illegal moves allowed</option></select>
 </div>
 <div class="row"><label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="lb" style="flex:none;width:auto"> Computer plays with the learned brain</label></div>
+<div class="row"><label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="ar" checked style="flex:none;width:auto"> Turn the board to face the player (Black at the bottom when playing Black; follows the side to move in two-player)</label></div>
 <div class="row"><button id="nw">New game</button><button id="un">Undo</button><button id="fl">Flip</button></div>
 <div class="row"><button id="ai" class="p" style="flex:1">Copy position for AI</button></div>
 <textarea id="pt" readonly hidden></textarea>
@@ -229,18 +230,20 @@ function play(m){
  last=m;sel=-1;pend=null;moves=legal(S);over=status();
  $("in").value="";$("er").textContent="";draw();kick();
 }
+const orient=()=>{let a=false;if($("ar").checked){const m=md();a=m==="b"||(m==="2"&&S.t==="b")}return a!==fl};
 function draw(){
+ const fv=orient();
  const ck=inCheck(S)?ksq(S.b,S.t==="w"):-1;
  const tg=sel>=0?moves.filter(m=>m.f===sel).map(m=>m.t):[];
  let h="";
  for(let k=0;k<64;k++){
-  const i=fl?63-k:k,r=i>>3,c=i&7,p=S.b[i];
+  const i=fv?63-k:k,r=i>>3,c=i&7,p=S.b[i];
   const cl=["sq",(r+c)%2?"d":"l"];
   if(i===sel)cl.push("sel");
   if(last&&(i===last.f||i===last.t))cl.push("lm");
   if(i===ck)cl.push("ck");
   if(tg.includes(i))cl.push(p?"cap":"dot");
-  h+=`<div class="${cl.join(" ")}" data-i="${i}">${p?`<b class="${isW(p)?"w":"k"}">${G[p.toUpperCase()]}\uFE0E</b>`:""}${c===(fl?7:0)?`<i>${8-r}</i>`:""}${r===(fl?0:7)?`<u>${F[c]}</u>`:""}</div>`;
+  h+=`<div class="${cl.join(" ")}" data-i="${i}">${p?`<b class="${isW(p)?"w":"k"}">${G[p.toUpperCase()]}\uFE0E</b>`:""}${c===(fv?7:0)?`<i>${8-r}</i>`:""}${r===(fv?0:7)?`<u>${F[c]}</u>`:""}</div>`;
  }
  $("bd").innerHTML=h;
  const side=S.t==="w"?"White":"Black";
@@ -303,6 +306,7 @@ $("go").onclick=submit;
 $("in").onkeydown=e=>{if(e.key==="Enter")submit()};
 $("nw").onclick=init;
 $("fl").onclick=()=>{fl=!fl;draw()};
+$("ar").onchange=()=>{fl=false;draw()};
 $("md").onchange=()=>{sel=-1;pend=null;moves=legal(S);over=status();draw();kick()};
 $("un").onclick=()=>{
  if(!hist.length)return;
