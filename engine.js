@@ -7,6 +7,7 @@
 'use strict';
 const PASS='ai-chess-brain-v1',C=globalThis.crypto||require('crypto').webcrypto,VER=3;
 const D={N:[-33,-31,-18,-14,14,18,31,33],K:[-17,-16,-15,-1,1,15,16,17],B:[-17,-15,15,17],R:[-16,-1,1,16]};D.Q=D.B.concat(D.R);
+const DN=D.N,DKG=D.K,DB=D.B,DR=D.R,DQ=[-17,-15,15,17,-16,-1,1,16];
 const SV=[0,100,320,330,500,900,0],PW=[0,0,1,1,2,4,0],MATE=30000,INF=32000;
 const CM=new Uint8Array(128).fill(15);CM[0]=13;CM[7]=14;CM[4]=12;CM[112]=7;CM[119]=11;CM[116]=3;
 // own-side index of a square: rank 0 is the owner's back rank (so one table serves both colours)
@@ -25,7 +26,7 @@ const BMG=[],BEG=[];
 // scalar bonuses: [bishop pair, doubled pawn, isolated pawn, passed pawn per rank (endgame), king pawn shield, tempo]
 const XB=[30,12,12,0,10,10],PBM=[0,0,5,10,20,35,60,0],PBE=[0,0,10,20,40,70,120,0];
 const NP=5+384+384+6,OV=0,OP=5,OW=389,OX=773;   // layout of the flat parameter vector
-const fresh=()=>({ver:VER,hist:[],g:0,w:0,d:0,l:0,V:[100,320,330,500,900,0],P:new Array(384).fill(0),W:new Array(384).fill(0),X:new Array(6).fill(0),opt:null,op:{},mv:{},sac:{},miss:{},tag:{}});
+const fresh=()=>({ver:VER,hist:[],g:0,w:0,d:0,l:0,V:[100,320,330,500,900,0],P:new Array(384).fill(0),W:new Array(384).fill(0),X:new Array(6).fill(0),opt:null,pat:{},pred:{},pa:[0,0],op:{},mv:{},sac:{},miss:{},tag:{}});
 // Old brains (ver 1/2) keep all their statistics. Their piece-square numbers were learned while the engine only looked one move ahead,
 // so they are reset to the new, much better starting point.
 const migrate=K=>{const old=K.ver<3,f=fresh();for(const k in f)if(K[k]===undefined)K[k]=f[k];
@@ -61,12 +62,12 @@ function Engine(K,o){o=o||{};
   sLo=new Int32Array(N),sHi=new Int32Array(N),sPl=new Int32Array(N),sPh=new Int32Array(N),sMg=new Int32Array(N),sEg=new Int32Array(N),sPp=new Int8Array(N);
  const rm=(x,q)=>{const i=(x+6)*128+q;lo^=ZL[i];hi^=ZH[i];mg-=MG[i];eg-=EG[i];const a=x<0?-x:x;ph-=PW[a];cnt[x+6]--;if(a===1){plo^=ZL[i];phi^=ZH[i]}};
  const ad=(x,q)=>{const i=(x+6)*128+q;lo^=ZL[i];hi^=ZH[i];mg+=MG[i];eg+=EG[i];const a=x<0?-x:x;ph+=PW[a];cnt[x+6]++;if(a===1){plo^=ZL[i];phi^=ZH[i]}};
- function att(q,col){
-  for(const d of D.N){const t=q+d;if(!(t&136)&&b[t]===2*col)return 1}
-  for(const d of D.K){const t=q+d;if(!(t&136)&&b[t]===6*col)return 1}
-  for(const d of col>0?[-15,-17]:[15,17]){const t=q+d;if(!(t&136)&&b[t]===col)return 1}
-  for(const d of D.B){let t=q+d;while(!(t&136)){const x=b[t]*col;if(x){if(x===3||x===5)return 1;break}t+=d}}
-  for(const d of D.R){let t=q+d;while(!(t&136)){const x=b[t]*col;if(x){if(x===4||x===5)return 1;break}t+=d}}
+ function att(q,col){let t;
+  for(let i=0;i<8;i++){t=q+DN[i];if(!(t&136)&&b[t]===2*col)return 1}
+  for(let i=0;i<8;i++){t=q+DKG[i];if(!(t&136)&&b[t]===6*col)return 1}
+  t=q-16*col+1;if(!(t&136)&&b[t]===col)return 1;t=q-16*col-1;if(!(t&136)&&b[t]===col)return 1;
+  for(let i=0;i<4;i++){const d=DB[i];t=q+d;while(!(t&136)){const x=b[t]*col;if(x){if(x===3||x===5)return 1;break}t+=d}}
+  for(let i=0;i<4;i++){const d=DR[i];t=q+d;while(!(t&136)){const x=b[t]*col;if(x){if(x===4||x===5)return 1;break}t+=d}}
   return 0}
  const inCheck=()=>att(s>0?wk:bk,-s);
  const reset=()=>{lo=hi=plo=phi=mg=eg=ph=0;cnt.fill(0);
@@ -104,11 +105,11 @@ function Engine(K,o){o=o||{};
    if(x===1){const u=16*s,t=f+u;
     if(!b[t]){if((t>>4)===R){MB[k++]=f|t<<7|5<<14;if(!caps){MB[k++]=f|t<<7|4<<14;MB[k++]=f|t<<7|3<<14;MB[k++]=f|t<<7|2<<14}}
      else if(!caps){MB[k++]=f|t<<7;if((f>>4)===(s>0?1:6)&&!b[t+u])MB[k++]=f|(t+u)<<7|3<<17}}
-    for(const d of[u-1,u+1]){const q=f+d;if(q&136)continue;
+    for(let di=-1;di<2;di+=2){const q=f+u+di;if(q&136)continue;
      if(b[q]*s<0){if((q>>4)===R){MB[k++]=f|q<<7|5<<14;if(!caps){MB[k++]=f|q<<7|4<<14;MB[k++]=f|q<<7|3<<14;MB[k++]=f|q<<7|2<<14}}else MB[k++]=f|q<<7}
      else if(q===ep)MB[k++]=f|q<<7|1<<17}
-   }else if(x===2||x===6){for(const d of x===2?D.N:D.K){const q=f+d;if(q&136)continue;const y=b[q]*s;if(y<0||(y===0&&!caps))MB[k++]=f|q<<7}}
-   else for(const d of x===3?D.B:x===4?D.R:D.Q){let q=f+d;while(!(q&136)){const y=b[q]*s;if(y>0)break;if(y<0){MB[k++]=f|q<<7;break}if(!caps)MB[k++]=f|q<<7;q+=d}}}
+   }else if(x===2||x===6){const dd=x===2?DN:DKG;for(let i=0;i<8;i++){const q=f+dd[i];if(q&136)continue;const y=b[q]*s;if(y<0||(y===0&&!caps))MB[k++]=f|q<<7}}
+   else{const dd=x===3?DB:x===4?DR:DQ;for(let i=0,nd=x===3||x===4?4:8;i<nd;i++){const d=dd[i];let q=f+d;while(!(q&136)){const y=b[q]*s;if(y>0)break;if(y<0){MB[k++]=f|q<<7;break}if(!caps)MB[k++]=f|q<<7;q+=d}}}}
   if(!caps){const ob=s>0?0:112,kb=s>0?1:4;
    if(c&(kb|kb*2)&&b[ob+4]===6*s&&!att(ob+4,-s)){
     if(c&kb&&!b[ob+5]&&!b[ob+6]&&b[ob+7]===4*s&&!att(ob+5,-s))MB[k++]=(ob+4)|(ob+6)<<7|2<<17;
@@ -135,7 +136,7 @@ function Engine(K,o){o=o||{};
  const npm=()=>s>0?cnt[8]+cnt[9]+cnt[10]+cnt[11]>0:cnt[4]+cnt[3]+cnt[2]+cnt[1]>0;
  // ---- search ----
  const tkL=new Int32Array(TS),tkH=new Int32Array(TS),tmv=new Int32Array(TS),tsc=new Int16Array(TS),tdp=new Int8Array(TS),tfl=new Uint8Array(TS),tag=new Uint8Array(TS);
- let age=1,nodes=0,stop=0,canStop=0,tEnd=0,maxN=0,rootM=0;
+ let MD=K,age=1,nodes=0,stop=0,canStop=0,tEnd=0,maxN=0,rootM=0;
  const killer=new Int32Array(MAXP*2),hist=new Int32Array(2*16384);
  const clearTT=()=>{age=age>=254?1:age+1;if(age===1)tag.fill(0)};
  function order(o,e,ttm,ply){for(let i=o;i<e;i++){const m=MB[i],f=m&127,t=(m>>7)&127,x=b[f]<0?-b[f]:b[f],v=b[t]<0?-b[t]:b[t],pr=(m>>14)&7;let sc;
@@ -175,7 +176,7 @@ function Engine(K,o){o=o||{};
   let best=-INF,bm=0,legal=0;const a0=alpha;
   for(let i=o;i<e;i++){const m=pickNext(i,e),f=m&127,t=(m>>7)&127,quiet=!(b[t]||(m>>17)===1||(m>>14)&7);
    make(m);if(att(kingAfter(),s)){unmake();continue}legal++;
-   const gives=att(s>0?wk:bk,-s);
+   const gives=quiet&&!chk&&att(s>0?wk:bk,-s);
    if(!pv&&!chk&&quiet&&!gives&&d<=2&&legal>1&&ev+100+120*d<=alpha){unmake();continue}
    let sc;
    if(legal===1)sc=-ab(d-1,-beta,-alpha,ply+1,true);
@@ -190,6 +191,26 @@ function Engine(K,o){o=o||{};
   if(!stop){tkL[ti]=lo;tkH[ti]=hi;tmv[ti]=bm;tdp[ti]=d>100?100:d;tag[ti]=age;tfl[ti]=best>=beta?2:best>a0?1:3;
    tsc[ti]=best>MATE-200?best+ply:best<-MATE+200?best-ply:best}
   return best}
+  // Context signature of a move: piece, captured piece, destination (from the mover's side), attacked/defended there, game phase, who is ahead.
+ // Results are remembered per signature, so a move is judged by the kind of situation it was played in, not by the move alone.
+ function ctx(m){const f=m&127,t=(m>>7)&127,x=b[f]<0?-b[f]:b[f],cap=(m>>17)===1?1:(b[t]<0?-b[t]:b[t]),sd=s,ev=evaluate();
+  make(m);const at=att(t,s)?1:0,df=att(t,-s)?1:0;unmake();
+  return((((x*7+cap)*64+IX(sd,t))*4+at*2+df)*4+Math.min(3,ph>>3))*5+Math.max(-2,Math.min(2,Math.round(ev/150)))+2}
+ // Second look at the root moves: add what past games say about the move's pattern, and what the opponent usually answers.
+ function rerank(L,dd,o,bm){const rd=Math.max(1,Math.min(dd-2,o.rd||3));stop=0;canStop=1;nodes=0;maxN=(o.nodes||1e12)*.6;tEnd=Date.now()+Math.max(80,(o.ms||1000)*.3);
+  const V=[];let top=-INF;
+  for(const m of L){make(m);const v=-ab(rd,-INF,INF,1,true);unmake();if(stop)return{m:bm,pr:0,pf:0};V.push(v);if(v>top)top=v}
+  let bs=-INF,bi=-1,bpr=0,bpf=0;
+  for(let i=0;i<L.length;i++){if(V[i]<top-50)continue;const m=L[i];let adj=0,pr=0,pf=0;
+   const a=MD.pat[ctx(m)];if(a&&a[0]>=8)adj+=Math.round(40*((a[1]-a[2])/a[0])*Math.min(1,a[0]/30));
+   make(m);const pd=MD.pred&&MD.pred[lo>>>0];
+   if(pd){let tot=0,mv=0,bc=0;for(const k in pd){tot+=pd[k];if(pd[k]>bc){bc=pd[k];mv=+k}}
+    if(tot>=3&&bc/tot>=.4){const e=gen(256,false);let ok=0;for(let j=256;j<e;j++)if(MB[j]===mv){ok=1;break}
+     if(ok){make(mv);if(att(kingAfter(),s))unmake();else{const u=ab(rd,-INF,INF,2,true);unmake();
+      if(!stop){pr=mv;pf=bc/tot;if(u>V[i])adj+=Math.min(120,Math.round(.6*pf*(u-V[i])))}}}}}
+   unmake();if(stop)return{m:bm,pr:0,pf:0};
+   if(V[i]+adj>bs){bs=V[i]+adj;bi=i;bpr=pr;bpf=pf}}
+  return bi<0?{m:bm,pr:0,pf:0}:{m:L[bi],pr:bpr,pf:bpf}}
  // Search the loaded position. o: {ms, depth, nodes}. Returns {m, score (side to move, centipawns), depth, nodes}
  function search(o){o=o||{};const t0=Date.now(),ms=o.ms||1000;nodes=0;stop=0;canStop=0;tEnd=t0+ms;maxN=o.nodes||1e12;hist.fill(0);killer.fill(0);
   const L=legalMoves();if(!L.length)return{m:0,score:inCheck()?-MATE:0,depth:0,nodes:0};
@@ -198,12 +219,15 @@ function Engine(K,o){o=o||{};
    if(rootM)bm=rootM;if(stop)break;score=sc;dd=d;canStop=1;
    if(Math.abs(sc)>MATE-200&&d>MATE-Math.abs(sc))break;
    if(Date.now()-t0>ms*.45||L.length===1&&d>=4)break}
-  return{m:bm,score,depth:dd,nodes}}
+  let pr=0,pf=0;
+  if(o.rank&&MD&&MD.pat&&L.length>1&&dd>=2){const q=rerank(L,dd,o,bm);bm=q.m;pr=q.pr;pf=q.pf}
+  return{m:bm,score,depth:dd,nodes,pr,pf}}
  const repCount=()=>{let r=0;for(let i=n;i>=0;i--)if(HL[i]===lo&&HH[i]===hi)r++;return r};
- return{set,snap,make,unmake,legalMoves,perft,search,clearTT,evaluate,inCheck,att,insuf,repCount,qsearch:()=>{stop=0;canStop=0;return qs(-INF,INF,0)},
+ return{ctx,setModel:k=>{MD=k},set,snap,make,unmake,legalMoves,perft,search,clearTT,evaluate,inCheck,att,insuf,repCount,qsearch:()=>{stop=0;canStop=0;return qs(-INF,INF,0)},
   mated:()=>inCheck()?-s:0,get hash(){return[lo,hi]},get side(){return s},get ply(){return n-n0},get half(){return h}}}
 // ---- pawn structure features (shared by the evaluation and the gradient) ----
-function pawnFeat(b,F){const wc=new Int8Array(10),bc=new Int8Array(10),wmin=new Int8Array(10).fill(8),bmax=new Int8Array(10).fill(-1),wp=[],bp=[];
+const _wc=new Int8Array(10),_bc=new Int8Array(10),_wm=new Int8Array(10),_bm=new Int8Array(10);
+function pawnFeat(b,F){const wc=_wc.fill(0),bc=_bc.fill(0),wmin=_wm.fill(8),bmax=_bm.fill(-1),wp=[],bp=[];
  for(let q=0;q<128;q++){if(q&136){q+=7;continue}const x=b[q];
   if(x===1){const f=(q&7)+1,r=q>>4;wc[f]++;if(r<wmin[f])wmin[f]=r;wp.push(q)}
   else if(x===-1){const f=(q&7)+1,r=q>>4;bc[f]++;if(r>bmax[f])bmax[f]=r;bp.push(q)}}
@@ -225,9 +249,9 @@ function grad(p,out,sc){const b=p.b,s=p.s,F=new Int32Array(5);let ph=0,wk=-1,bk=
 // ======================= self-play, learning, duels =======================
 const sig=x=>1/(1+Math.exp(-x/400)),up=(o,k,v)=>{const a=o[k]||(o[k]=v.map(()=>0));v.forEach((x,i)=>a[i]+=+x)};
 const mvId=(b,m,s)=>{const f=m&127,t=(m>>7)&127,x=Math.abs(b[f]),c=(m>>17)===1?1:Math.abs(b[t]);return(x*7+c)*64+IX(s,t)};
-const DEF={depth:3,nodes:2500,eps:.05,nz:25,bk:100,max:200,mu:1};
+const DEF={depth:3,nodes:2500,eps:.05,nz:25,bk:100,max:200,mu:1,pat:1};
 // One self-play game. E searches for the side of K; EO (optional) is an older brain playing the other colour (league play).
-function game(E,EO,K,D,G,o){const sd=Math.random()<.5?1:-1,P0=start(),R=[],smp=[],mats=[0],B=[];let key='',mat=0,res=0,streak=0,sgn=0,ply=0;
+function game(E,EO,K,D,G,o){const sd=Math.random()<.5?1:-1,P0=start(),R=[],smp=[],mats=[0],B=[];let key='',mat=0,res=0,streak=0,sgn=0,ply=0,calm=0;
  E.set(P0);E.clearTT();if(EO){EO.set(P0);EO.clearTT()}
  for(;;){const M=EO&&E.side!==sd?EO:E,s=E.side,L=E.legalMoves();
   if(!L.length){res=E.mated();res=res?-res:0;break}
@@ -238,43 +262,45 @@ function game(E,EO,K,D,G,o){const sd=Math.random()<.5?1:-1,P0=start(),R=[],smp=[
    let best=-1e9;for(const x of L){E.make(x);const v=-E.qsearch();E.unmake();let w=v+Math.random()*o.nz;
     const e=K.op[key+(x&16383)+','];if(e){const q=e[0]+e[1]+e[2];w+=o.bk*(((s>0?e[0]:e[2])+e[1]/2)/q-.5)*Math.min(1,q/5)+30/Math.sqrt(q+1)}else w+=30;
     if(w>best){best=w;m=x}}
-  }else{const r=M.search({nodes:o.nodes,depth:o.depth,ms:1e9});m=r.m;sc=r.score;
+  }else{const r=M.search({nodes:o.nodes,depth:o.depth,ms:1e9,rank:o.pat,rd:2});m=r.m;sc=r.score;
    if(r.score>=MATE-1&&Math.random()<o.eps){ms=mvId(pos.b,m,s);m=L[Math.random()*L.length|0]}   // sometimes overlook a mate in one (feeds the "missed mate" statistic)
    else if(Math.random()<o.eps)m=L[Math.random()*L.length|0];
-   if(Math.abs(sc)>=900){if(sgn===Math.sign(sc*s))streak++;else{sgn=Math.sign(sc*s);streak=1}}else streak=0}
-  const f=m&127,t=(m>>7)&127,pr=(m>>14)&7,fl=m>>17,x=Math.abs(pos.b[f]),c=fl===1?1:Math.abs(pos.b[t]),id=mvId(pos.b,m,s);
+   if(Math.abs(sc)>=700){if(sgn===Math.sign(sc*s))streak++;else{sgn=Math.sign(sc*s);streak=1}}else streak=0;calm=Math.abs(sc)<25?calm+1:0}
+  const pk=E.ctx(m),f=m&127,t=(m>>7)&127,pr=(m>>14)&7,fl=m>>17,x=Math.abs(pos.b[f]),c=fl===1?1:Math.abs(pos.b[t]),id=mvId(pos.b,m,s);
   const tg=[c?(SV[c]>SV[x]?'winning capture':'capture'):'quiet'];
   E.make(m);if(EO)EO.make(m);const ck=E.inCheck();
   if(ck)tg.push('check');if(pr)tg.push('promotion');if(fl===2)tg.push('castle');if(fl===1)tg.push('en passant');
-  R.push({s,id,tg,ms});mat+=s*(SV[c]+(pr?800:0));mats.push(mat);
+  R.push({s,id,tg,ms,pk});mat+=s*(SV[c]+(pr?800:0));mats.push(mat);
   if(ply<10){key+=(m&16383)+',';B.push(key)}
   else if(!c&&!pr&&!chk&&Math.abs(sc)<1500&&ply%2===0){pos.sc=sc;smp.push(pos)};
   ply++;
-  if(streak>=4&&ply>=20){res=sgn;break}}
+  if(streak>=3&&ply>=20){res=sgn;break}
+  if(calm>=24&&ply>=90){res=0;break}}
  return fin(E,K,D,G,o,R,B,smp,mats,res)}
 function fin(E,K,D,G,o,R,B,smp,mats,res){
  D.g++;D[res>0?'w':res<0?'l':'d']++;const ri=res>0?0:res<0?2:1,n=R.length;
  for(const k of B)up(D.op,k,[ri===0,ri===1,ri===2]);
  R.forEach((r,i)=>{const s=r.s,z=res*s,d=(mats[Math.min(i+2,n)]-mats[i])*s,a=[1,z>0,z<0,d];
-  up(D.mv,r.id,a);for(const t of r.tg)up(D.tag,t,a);
+  up(D.mv,r.id,a);up(D.pat,r.pk,[1,z>0,z<0]);for(const t of r.tg)up(D.tag,t,a);
   if(d<=-200)up(D.sac,r.id,[1,z>0,(mats[Math.min(i+4,n)]-mats[i])*s>=-100]);
   if(r.ms!=null)up(D.miss,r.ms,[1])});
  // learning signal: make the static evaluation of quiet positions predict a mix of the later search score and the game result
  for(const p of smp){E.set(p);const ev=E.evaluate(),Rt=(res*p.s+1)/2,T=(1-o.mu)*sig(p.sc)+o.mu*Rt;grad(p,G.g,(sig(ev)-T)/400);G.n++}}
 // Play games for ms milliseconds with fixed parameters. Returns statistics and the summed gradient (merge() applies it).
-function batch(K,ms,o){o=Object.assign({},DEF,o);const D={g:0,w:0,d:0,l:0,op:{},mv:{},sac:{},miss:{},tag:{}},G={g:new Float64Array(NP),n:0},
+function batch(K,ms,o){o=Object.assign({},DEF,o);const D={g:0,w:0,d:0,l:0,op:{},mv:{},sac:{},miss:{},tag:{},pat:{}},G={g:new Float64Array(NP),n:0},
  E=Engine(K,{tt:16}),EO=o.opp?Engine(o.opp,{tt:15}):null,t=Date.now();let n=0;
  do{game(E,EO,K,D,G,o);n++}while(Date.now()-t<ms);
  return{D,n,G:Array.from(G.g),ns:G.n}}
 const TUNE={LR:.15,decay:400},B1=.9,B2=.999;
 function merge(K,R){const D=R.D;for(const k of['g','w','d','l'])K[k]+=D[k];
- for(const s of['op','mv','sac','miss','tag']){const a=K[s];for(const k in D[s]){const v=D[s][k],x=a[k];if(x)v.forEach((y,i)=>x[i]+=y);else a[k]=v}}
+ for(const s of['op','mv','sac','miss','tag','pat']){const a=K[s];for(const k in D[s]){const v=D[s][k],x=a[k];if(x)v.forEach((y,i)=>x[i]+=y);else a[k]=v}}
  if(R.ns>0){const th=flat(K);let op=K.opt;if(!op||!op.m||op.m.length!==NP)op=K.opt={t:0,m:new Array(NP).fill(0),v:new Array(NP).fill(0)};
   op.t++;const c1=1-Math.pow(B1,op.t),c2=1-Math.pow(B2,op.t),lr=TUNE.LR*Math.max(.25,1/Math.sqrt(1+op.t/TUNE.decay));
   for(let i=0;i<NP;i++){const g=R.G[i]/R.ns;op.m[i]=B1*op.m[i]+(1-B1)*g;op.v[i]=B2*op.v[i]+(1-B2)*g*g;
    th[i]-=(i>=OX?lr*.25:lr)*(op.m[i]/c1)/(Math.sqrt(op.v[i]/c2)+1e-9);
    th[i]=i<OP?Math.max(30,Math.min(2000,th[i])):i<OX?Math.max(-150,Math.min(150,th[i])):Math.max(-30,Math.min(30,th[i]))}
   unflat(K,th)}
+ for(let m=3;Object.keys(K.pat).length>60000&&m<500;m*=2)for(const k in K.pat)if(K.pat[k][0]<m)delete K.pat[k];
  for(let m=3;Object.keys(K.op).length>40000&&m<500;m*=2)for(const k in K.op){const e=K.op[k];if(e[0]+e[1]+e[2]<m)delete K.op[k]}}
 // A against B (brains or null for the plain classical evaluation), n games from shared random openings with colours swapped. Returns A's score 0..1
 function duel(A,B,n,o){o=Object.assign({depth:4,nodes:3000,max:160},o);const EA=Engine(A,{tt:16}),EB=Engine(B,{tt:16});let sc=0;let open=null;
@@ -292,9 +318,22 @@ function duel(A,B,n,o){o=Object.assign({depth:4,nodes:3000,max:160},o);const EA=
  return sc/n}
 // Best move for a real position {b,s,c,ep,h}. rep: flat hashes of earlier positions. The searcher is cached per brain.
 let TH=null;
-function think(K,pos,rep,o){const sg=K?JSON.stringify([K.V,K.P,K.W,K.X]):'';if(!TH||TH.sg!==sg)TH={sg,E:Engine(K,{tt:18})};TH.E.set(pos,rep);return TH.E.search(o)}
+function think(K,pos,rep,o){const sg=K?JSON.stringify([K.V,K.P,K.W,K.X]):'';if(!TH||TH.sg!==sg)TH={sg,E:Engine(K,{tt:18})};TH.E.setModel(K);TH.E.set(pos,rep);return TH.E.search(Object.assign({rank:!!(K&&K.pat)},o))}
+// ---- learning from real games (called by the page) ----
+let HL2=null;const eng2=()=>HL2||(HL2=Engine(null,{tt:4}));
+const findMove=(E,mv)=>E.legalMoves().find(m=>(m&127)===mv.f&&((m>>7)&127)===mv.t&&((m>>14)&7)===(mv.pr||0));
+// the opponent (a human) played mv in position pos: remember it, so the engine can predict that habit
+function noteMove(K,pos,mv){const E=eng2();E.set(pos);const m=findMove(E,mv);if(!m)return 0;
+ const k=E.hash[0]>>>0,d=K.pred[k]||(K.pred[k]={});d[m]=(d[m]||0)+1;
+ if(Object.keys(K.pred).length>40000)for(const q in K.pred){let t=0;for(const x in K.pred[q])t+=K.pred[q][x];if(t<2)delete K.pred[q]}
+ return m}
+// finished game: entries [{pos,f,t,pr}] in order, res = +1 white won, -1 black won, 0 draw
+function learnGame(K,entries,res){const E=eng2();for(const e of entries){E.set(e.pos);const m=findMove(E,e);if(!m)continue;
+ const z=res*e.pos.s;up(K.pat,E.ctx(m),[1,z>0,z<0])}}
+// the position's key and predicted reply, for display / hit tracking
+const predicted=(K,pos)=>{const E=eng2();E.set(pos);const d=K.pred[E.hash[0]>>>0];if(!d)return null;let tot=0,bm=0,bc=0;for(const k in d){tot+=d[k];if(d[k]>bc){bc=d[k];bm=+k}}return tot>=2?{m:bm,p:bc/tot,n:tot}:null};
 const perft=(p,d)=>{const E=Engine(null,{tt:4});E.set(p);return E.perft(d)};
 let HE=null;const hashPos=p=>{HE=HE||Engine(null,{tt:4});HE.set(p);return HE.hash};
-const CH={fresh,migrate,pack,unpack,PASS,VER,start,Engine,batch,merge,duel,think,perft,hashPos,grad,flat,unflat,NP,MATE,TUNE};
+const CH={fresh,migrate,pack,unpack,PASS,VER,start,Engine,batch,merge,duel,think,noteMove,learnGame,predicted,perft,hashPos,grad,flat,unflat,NP,MATE,TUNE};
 if(typeof module!=='undefined')module.exports=CH;else globalThis.CH=CH;
 })();
